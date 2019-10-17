@@ -4,15 +4,6 @@ defmodule Tapestry do
   Documentation for Tapestry.
   """
 
-  @doc """
-  Hello world.
-
-  ## Examples
-
-      iex> Tapestry.hello()
-      :world
-
-  """
 
 
   def buildNode(_x) do
@@ -62,42 +53,52 @@ defmodule Tapestry do
    @spec nodeRoutingTable(any, integer) :: any
    def nodeRoutingTable(nodeId,num) do
     #globalList = listOfIds(num)
-    globalList = ["0123","0122","1234","1567","2345"]
-    #neighbourMap = Enum.map(1..4,fn(level) -> cond do
-     #                                          level == 1 ->
-      #                                         levelmap = %{}
-       #                                         map = Enum.map(0..10,fn(entry)-> list = Enum.reduce(globalIdList,[],fn id,acc->
-        #                                                                                                                    cond do -> String.at(id,0) == entry
-         #                                                                                                                               acc ++ [id]
-           #                                                                                                                 end
-          #                                                                                                                  acc
-            #                                                                                                        end)
-             #                                                        end)
-              #                                end
-               #                    end)
-    #end
-    levelList = Enum.reduce(0..10,[], fn entry,acc -> list = Enum.reduce(globalList, [], fn node,acc  -> IO.inspect(node)
-                                                                                                        IO.inspect(String.at(node,0))
-                                                                                                        cond do
-                                                                                                        String.at(node,0) == entry ->
-                                                                                                        acc ++ [node]
-                                                                                                        true -> acc
-                                                                                                        end
-                                                                                          end)
-                                                      id = String.to_integer(nodeId,16)
-                                                      min = id
-                                                      aptLink= nodeId
-                                                      apt_entry = Enum.map(list,fn(potentialLink)-> difference = id - String.to_integer(potentialLink,16)
-                                                                                                                    cond do
-                                                                                                                      difference < min ->
-                                                                                                                      min = difference
-                                                                                                                      aptLink = potentialLink
-                                                                                                                    end
-                                                                                                                    aptLink
-                                                                                  end )
-                                        acc ++ [apt_entry]
-                                        end)
-                  levelList
+    globalList = ["0123","0122","1234","1567","2345","3212","3025","A659","A770","D456","2135","2009","2112","2113","2114","2131","2130","213A"]
+    routingMap = %{}
+    neighbourMap = Enum.map(1..4,fn(level) -> cond do
+                                                  level == 1 ->
+                                                       levelList = Enum.reduce(0..15,[], fn entry,acc -> list = Enum.reduce(globalList, [], fn node,acc  ->
+                                                                                                                                         cond do
+                                                                                                                                          String.at(node,0) == Integer.to_string(entry,16) ->
+                                                                                                                                          #IO.puts("Condition true")
+                                                                                                                                          acc ++ [node]
+                                                                                                                                           true -> acc
+                                                                                                                                            end
+                                                                                                                                          end)
+                                                                                                            #IO.inspect(list)
+                                                                                                            id = String.to_integer(nodeId,16)
+                                                                                                            aptLink = cond do
+                                                                                                                Enum.empty?(list) -> []
+                                                                                                                true -> Enum.min_by(list,fn potentialLink -> abs (id - String.to_integer(potentialLink,16))end)
+                                                                                                                   end
+                                                                                                            #IO.inspect aptLink
+                                                                                                             acc ++ [aptLink]
+                                                                                            end)
+                                                      Map.put(routingMap,level,levelList)
+                                                    true ->
+                                                                     levelList = Enum.reduce(0..15,[], fn entry,acc -> list = Enum.reduce(globalList, [], fn node,acc  ->
+                                                                                                                                                                         cond do
+                                                                                                                                                                          String.at(node,level) == Integer.to_string(entry,16) and String.slice(node,0..level-1) == String.slice(nodeId,0..level-1) ->
+                                                                                                                                                                          #IO.puts("Condition true")
+                                                                                                                                                                          acc ++ [node]
+                                                                                                                                                                           true -> acc
+                                                                                                                                                                           end
+                                                                                                                                                            end)
+                                                                                                                          #IO.inspect(list)
+                                                                                                                          id = String.to_integer(nodeId,16)
+                                                                                                                          aptLink = cond do
+                                                                                                                          Enum.empty?(list) -> []
+                                                                                                                          true -> Enum.min_by(list,fn potentialLink -> abs (id - String.to_integer(potentialLink,16))end)
+                                                                                                                          end
+                                                                                                                          #IO.inspect aptLink
+                                                                                                                         acc ++ [aptLink]
+                                                                                                          end)
+                                                                          Map.put(routingMap,level,levelList)
+
+
+                                                end
+                                              end)
+  neighbourMap
    end
 
 
