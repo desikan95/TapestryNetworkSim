@@ -54,12 +54,12 @@ defmodule Tapestry do
    def nodeRoutingTable(nodeId,num) do
     #globalList = listOfIds(num)
     globalList = ["0123","0122","1234","1567","2345","3212","3025","A659","A770","D456","2135","2009","2112","2113","2114","2131","2130","213A"]
-    routingMap = %{}
-    neighbourMap = Enum.map(1..4,fn(level) -> cond do
+
+    routingMap = Enum.reduce(1..4,%{}, fn level, acc -> cond do
                                                   level == 1 ->
-                                                       levelList = Enum.reduce(0..15,[], fn entry,acc -> list = Enum.reduce(globalList, [], fn node,acc  ->
+                                                       levelNodes = Enum.reduce(0..15,[], fn entryNo,acc -> list = Enum.reduce(globalList, [], fn node,acc  ->
                                                                                                                                          cond do
-                                                                                                                                          String.at(node,0) == Integer.to_string(entry,16) ->
+                                                                                                                                          String.at(node,0) == Integer.to_string(entryNo,16) ->
                                                                                                                                           #IO.puts("Condition true")
                                                                                                                                           acc ++ [node]
                                                                                                                                            true -> acc
@@ -74,15 +74,15 @@ defmodule Tapestry do
                                                                                                             #IO.inspect aptLink
                                                                                                              acc ++ [aptLink]
                                                                                             end)
-                                                      Map.put(routingMap,level,levelList)
+                                                      Map.put(acc,level,levelNodes)
                                                     true ->
-                                                                     levelList = Enum.reduce(0..15,[], fn entry,acc -> list = Enum.reduce(globalList, [], fn node,acc  ->
-                                                                                                                                                                         cond do
-                                                                                                                                                                          String.at(node,level) == Integer.to_string(entry,16) and String.slice(node,0..level-1) == String.slice(nodeId,0..level-1) ->
+                                                                     levelNodes = Enum.reduce(0..15,[], fn entryNo,acc -> list = Enum.reduce(globalList, [], fn node,acc  ->
+                                                                                                                                                                        cond do
+                                                                                                                                                                          String.at(node,level-1) == Integer.to_string(entryNo,16) and String.slice(node,0..level-2) == String.slice(nodeId,0..level-2) ->
                                                                                                                                                                           #IO.puts("Condition true")
                                                                                                                                                                           acc ++ [node]
                                                                                                                                                                            true -> acc
-                                                                                                                                                                           end
+                                                                                                                                                                        end
                                                                                                                                                             end)
                                                                                                                           #IO.inspect(list)
                                                                                                                           id = String.to_integer(nodeId,16)
@@ -93,76 +93,11 @@ defmodule Tapestry do
                                                                                                                           #IO.inspect aptLink
                                                                                                                          acc ++ [aptLink]
                                                                                                           end)
-                                                                          Map.put(routingMap,level,levelList)
+                                                                          Map.put(acc,level,levelNodes)
 
 
                                                 end
                                               end)
-  neighbourMap
-   end
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-   def createRoutingTable(nodeId) do
-    id = Integer.to_string(nodeId)
-    length = String.length(id)
-    map= %{}
-    final_map = Enum.reduce 1..length, map, fn i, acc -> Map.put(acc,i,[]) end
-    neighbour_list = Enum.map(Map.keys(final_map), fn(level)->
-                                                                #IO.inspect level
-                                                                list  = Enum.map(0..9,
-                                                                  fn(entry) -> levelnodes = Enum.reduce(0..length-1,"",
-                                                                                            fn i,acc ->
-                                                                                                      cond do
-
-                                                                                                      i<level ->
-                                                                                                                    str =  acc <> String.at(id, i)
-                                                                                                                    str
-                                                                                                      i == level ->
-                                                                                                                    str = acc <> Integer.to_string(entry)
-                                                                                                                    str
-                                                                                                      i>level ->
-                                                                                                                    str = acc <> "0"
-                                                                                                                    str
-                                                                                                      end
-                                                                                             end )
-
-                                                                                 #levelmap = Enum.reduce levelnodes, Map.fetch!(final_map,level), fn node,acc -> Map.get_and_update!(final_map,level, acc ++ node) end
-                                                                                 #levelmap = Map.put(final_map,level,levelnodes)
-                                                                                 #IO.inspect levelmap
-                                                                             #IO.inspect (acc ++ string)
-                                                                    end)
-
-                                                                #bool = is_list(list)
-                                                                IO.puts level
-                                                                crap = Enum.reduce(list,[],fn item,acc-> acc ++ item end)
-                                                                IO.puts crap
-                                                                #Enum.each(list, fn(item)-> IO.puts(item)end)
-                                                                #IO.puts(bool)
-                                                end)
-                                                #IO.inspect neighbour_list
+                                              routingMap
    end
 end
