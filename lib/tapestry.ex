@@ -12,13 +12,16 @@ defmodule Tapestry do
   end
 
   def init(_val)do
-    state = {0,%{}}
+    state = {"",%{}}
     {:ok,state}
    end
 
+  @spec mapPIDNodeId(atom | pid | {atom, any} | {:via, atom, any}, any) :: any
   def mapPIDNodeId(pid , id) do
     GenServer.call(pid,{:mapToId,id})
   end
+
+
 
    def createPeers(numNodes) do
     nodes= Enum.map(1..numNodes, fn (x) ->
@@ -28,32 +31,92 @@ defmodule Tapestry do
       nodes
    end
 
-
-
-   def listOfIds(num) do
-    peers = createPeers(num)
-    nodeids = Enum.reduce(peers, [], fn x, acc-> {id,_list} = GenServer.call(x,{:print})
-                                            acc ++ [id]
-                                            end )
+   def listOfIds(peers) do
+    nodeids = Enum.reduce(peers, [], fn x, acc-> acc ++ [GenServer.call(x,{:fecthNodeId})]end)
     nodeids
    end
 
+   def updateNodeState(peers) do
+    listOfNodeIds = listOfIds(peers)
+    Enum.map(peers,fn(peer) ->  GenServer.call(peer,{:updateStateWithRoutingTable,listOfNodeIds}) end)
+   end
+
+   def makeRequests(numNodes,_numRequests) do
+    IO.puts("Number of nodes #{numNodes}")
+    peers = createPeers(numNodes)
+    IO.puts("List of NodeIds : >>>>>")
+    listOfNodeIds = listOfIds(peers)
+    IO.inspect(listOfNodeIds)
+    updateNodeState(peers)
+    Enum.map(peers,fn(peer)-> destinationNode = Enum.random(listOfNodeIds)
+                              source = GenServer.call(peer,{:fecthNodeId})
+                              IO.puts("Source Node: #{source}            Destination Node: #{destinationNode}")
+                              noOfhops = routing(source,destinationNode,0,peers)
+                              IO.puts("Number of hops: #{noOfhops}")
+                              IO.puts("..........................................................................................")
+                              end )
+
+   end
+
    def handle_call({:mapToId,id},_from,state) do
-    {_id,list}=state
+    {_id,map}=state
     stringId = Integer.to_string(id)
      nodeid =  String.slice(:crypto.hash(:sha, stringId) |> Base.encode16, 0..3)
-    state={nodeid,list}
+    state={nodeid,map}
     {:reply,nodeid,state}
    end
 
-   def handle_call({:print},_from,state) do
-    {:reply,state,state}
+   def handle_call({:updateStateWithRoutingTable,globalList},_from,state) do
+    {id,_map}=state
+    routingmap = nodeRoutingTable(id,globalList)
+    state={id,routingmap}
+    {:reply,routingmap,state}
+   end
+
+   def handle_call({:fecthNodeId},_from,state)do
+    {id,_map}=state
+    {:reply,id,state}
+   end
+
+
+   def handle_call({:fetchNodeRoutingMap},_from,state)do
+    {_id,map} = state
+    {:reply,map,state}
+   end
+
+   def routing(nodeId,destinationNode,hopNo,peers) do
+    IO.puts("Node : #{nodeId}")
+    cond do
+      nodeId ==  destinationNode ->
+      hopNo
+      true ->
+          [pid]= Enum.reject(peers, fn(peer)->
+                                            id = GenServer.call(peer,{:fecthNodeId})
+                                            id  != nodeId end)
+
+          routingMap = GenServer.call(pid,{:fetchNodeRoutingMap})
+          IO.puts("Routing Map of Node >>>>>")
+          IO.inspect(routingMap)
+        entryNo = String.at(destinationNode,hopNo)
+        #IO.puts(entryNo)
+        entry= String.to_integer(entryNo,16)
+        #IO.inspect(Map.fetch(routingMap, hopNo+1))
+        {:ok,levelnodes} = Map.fetch(routingMap, hopNo+1)
+        #IO.inspect levelnodes
+        node = Enum.at(levelnodes,entry)
+        IO.puts("Fetching node #{node} from Level #{hopNo+1}")
+        #IO.inspect(node)
+        cond do
+          is_list(node) and Enum.empty?(node) -> IO.puts("No such fucking node !")
+          true -> routing(node,destinationNode,hopNo+1,peers)
+        end
+    end
    end
 
    @spec nodeRoutingTable(any, integer) :: any
-   def nodeRoutingTable(nodeId,num) do
+   def nodeRoutingTable(nodeId,globalList) do
     #globalList = listOfIds(num)
-    globalList = ["0123","0122","1234","1567","2345","3212","3025","A659","A770","D456","2135","2009","2112","2113","2114","2131","2130","213A"]
+    #globalList = ["0123","2012","6137","6000","6100","6130","6131","6132","6133","6123","6900","0122","1234","1567","2345","3212","3025","A659","A770","D456","2135","2009","2112","2113","2114","2131","2130","213A"]
 
     routingMap = Enum.reduce(1..4,%{}, fn level, acc -> cond do
                                                   level == 1 ->
@@ -76,24 +139,24 @@ defmodule Tapestry do
                                                                                             end)
                                                       Map.put(acc,level,levelNodes)
                                                     true ->
-                                                                     levelNodes = Enum.reduce(0..15,[], fn entryNo,acc -> list = Enum.reduce(globalList, [], fn node,acc  ->
-                                                                                                                                                                        cond do
+                                                        levelNodes = Enum.reduce(0..15,[], fn entryNo,acc -> list = Enum.reduce(globalList, [], fn node,acc  ->
+                                                                                                                                                                cond do
                                                                                                                                                                           String.at(node,level-1) == Integer.to_string(entryNo,16) and String.slice(node,0..level-2) == String.slice(nodeId,0..level-2) ->
                                                                                                                                                                           #IO.puts("Condition true")
                                                                                                                                                                           acc ++ [node]
                                                                                                                                                                            true -> acc
-                                                                                                                                                                        end
-                                                                                                                                                            end)
+                                                                                                                                                                  end
+                                                                                                                                                  end)
                                                                                                                           #IO.inspect(list)
-                                                                                                                          id = String.to_integer(nodeId,16)
-                                                                                                                          aptLink = cond do
-                                                                                                                          Enum.empty?(list) -> []
-                                                                                                                          true -> Enum.min_by(list,fn potentialLink -> abs (id - String.to_integer(potentialLink,16))end)
-                                                                                                                          end
+                                                                                                                id = String.to_integer(nodeId,16)
+                                                                                                                aptLink = cond do
+                                                                                                                Enum.empty?(list) -> []
+                                                                                                                true -> Enum.min_by(list,fn potentialLink -> abs (id - String.to_integer(potentialLink,16))end)
+                                                                                                                end
                                                                                                                           #IO.inspect aptLink
-                                                                                                                         acc ++ [aptLink]
-                                                                                                          end)
-                                                                          Map.put(acc,level,levelNodes)
+                                                                                                                acc ++ [aptLink]
+                                                                                            end)
+                                                        Map.put(acc,level,levelNodes)
 
 
                                                 end
