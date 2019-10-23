@@ -228,14 +228,14 @@ defmodule Tapestry do
 
     IO.puts("Number of nodes #{numNodes}")
     peers = createPeers(numNodes)
-    IO.puts("List of NodeIds : >>>>>")
+    #IO.puts("List of NodeIds : >>>>>")
     listOfNodeIds = listOfIds(peers)
    IO.inspect(listOfNodeIds)
     updateNodeState(peers)
     Enum.map(peers,fn(peer)-> destinationNode = Enum.random(listOfNodeIds)
                               source = GenServer.call(peer,{:fecthNodeId})
                               IO.puts("Source Node: #{source}            Destination Node: #{destinationNode}")
-                              noOfhops = routing(source,destinationNode,0,peers)
+                              noOfhops = routing(source,destinationNode,1,0,peers)
                               IO.puts("Number of hops: #{noOfhops}")
                               IO.puts("..........................................................................................")
                               end )
@@ -281,10 +281,43 @@ defmodule Tapestry do
     {:reply,id,state}
    end
 
-   def handle_cast({:saveRoutingTable,routingTable},state) do
-     {id,_}=state
-     {:noreply,{id,routingTable}}
+  def handle_cast({:saveRoutingTable,routingTable},state) do
+    {id,_}=state
+    {:noreply,{id,routingTable}}
+  end
+
+   def handle_call({:fetchNodeRoutingMap},_from,state)do
+    {_id,map} = state
+    {:reply,map,state}
    end
+
+   def routing(currentNode,destinationNode,currentLevel,hopNo,peers) do
+    #IO.puts("Node : #{currentNode}")
+    cond do
+      currentNode ==  destinationNode ->
+      hopNo
+      true ->
+          [pid]= Enum.reject(peers, fn(peer)->
+
+                                            id = GenServer.call(peer,{:fecthNodeId})
+                                            currentNode != id end)
+
+          routingMap = GenServer.call(pid,{:fetchNodeRoutingMap})
+          IO.puts("Routing Map of Node >>>>>")
+          IO.inspect(routingMap)
+        entryNo = String.at(destinationNode,currentLevel-1)
+        entry= String.to_integer(entryNo,16)
+        IO.puts(entry)
+        {:ok,levelnodes} = Map.fetch(routingMap, currentLevel)
+        nextNode = Enum.at(levelnodes,entry)
+        IO.puts("Fetching node #{nextNode} from Level #{currentLevel}")
+        cond do
+          is_list(nextNode) and Enum.empty?(nextNode) -> IO.puts("No such fucking node !")
+          nextNode == currentNode -> routing(nextNode,destinationNode,currentLevel+1,hopNo,peers)
+          true -> routing(nextNode,destinationNode,currentLevel+1,hopNo+1,peers)
+        end
+    end
+  end
 
    def handle_cast({:addNewNode,newnodehash},state) do
   #  newnodehash = GenServer.call(pid, {:getHash})
