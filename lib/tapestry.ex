@@ -33,6 +33,7 @@ defmodule TapestrySupervisor do
     Enum.each(nodes, fn (node) -> Tapestry.initializeNeighbours(node,nodes)   end)
 
     Tapestry.networkJoin(nodes)
+    Tapestry.makeRequests(nodes)
   end
 
   def init(numNodes) do
@@ -162,7 +163,7 @@ defmodule Tapestry do
      end
    end
 
-#   @spec nodeRoutingTable(any, integer) :: any
+   @spec nodeRoutingTable(any, integer) :: any
    def nodeRoutingTable(nodeId,nodes) do
     #globalList = listOfIds(num)
     #globalList = ["0123","0122","1234","1567","2345","3212","3025","A659","A770","D456","2135","2009","2112","2113","2114","2131","2130","213A"]
@@ -224,11 +225,12 @@ defmodule Tapestry do
    end
 
    def makeRequests(numNodes,_numRequests) do
+
     IO.puts("Number of nodes #{numNodes}")
     peers = createPeers(numNodes)
     IO.puts("List of NodeIds : >>>>>")
     listOfNodeIds = listOfIds(peers)
-    IO.inspect(listOfNodeIds)
+   IO.inspect(listOfNodeIds)
     updateNodeState(peers)
     Enum.map(peers,fn(peer)-> destinationNode = Enum.random(listOfNodeIds)
                               source = GenServer.call(peer,{:fecthNodeId})
@@ -264,6 +266,8 @@ defmodule Tapestry do
 
    def handle_call({:getHash},_from,state) do
      {id, _} = state
+     {:reply,id,state}
+   end
 
    def handle_call({:updateStateWithRoutingTable,globalList},_from,state) do
     {id,_map}=state
@@ -391,5 +395,5 @@ defmodule Tapestry do
           end
     end
 
-end
+
 end
