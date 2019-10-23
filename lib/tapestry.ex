@@ -62,13 +62,16 @@ defmodule Tapestry do
   end
 
   def init(_val)do
-    state = {0,%{}}
+    state = {"",%{}}
     {:ok,state}
    end
 
+  @spec mapPIDNodeId(atom | pid | {atom, any} | {:via, atom, any}, any) :: any
   def mapPIDNodeId(pid , id) do
     GenServer.call(pid,{:mapToId,id})
   end
+
+
 
    def createPeers(numNodes) do
     nodes= Enum.map(1..numNodes, fn (x) ->
@@ -210,21 +213,38 @@ defmodule Tapestry do
                                               routingMap
    end
 
-
-
-   def listOfIds(num) do
-    peers = createPeers(num)
-    nodeids = Enum.reduce(peers, [], fn x, acc-> {id,_list} = GenServer.call(x,{:print})
-                                            acc ++ [id]
-                                            end )
+   def listOfIds(peers) do
+    nodeids = Enum.reduce(peers, [], fn x, acc-> acc ++ [GenServer.call(x,{:fecthNodeId})]end)
     nodeids
    end
 
+   def updateNodeState(peers) do
+    listOfNodeIds = listOfIds(peers)
+    Enum.map(peers,fn(peer) ->  GenServer.call(peer,{:updateStateWithRoutingTable,listOfNodeIds}) end)
+   end
+
+   def makeRequests(numNodes,_numRequests) do
+    IO.puts("Number of nodes #{numNodes}")
+    peers = createPeers(numNodes)
+    IO.puts("List of NodeIds : >>>>>")
+    listOfNodeIds = listOfIds(peers)
+    IO.inspect(listOfNodeIds)
+    updateNodeState(peers)
+    Enum.map(peers,fn(peer)-> destinationNode = Enum.random(listOfNodeIds)
+                              source = GenServer.call(peer,{:fecthNodeId})
+                              IO.puts("Source Node: #{source}            Destination Node: #{destinationNode}")
+                              noOfhops = routing(source,destinationNode,0,peers)
+                              IO.puts("Number of hops: #{noOfhops}")
+                              IO.puts("..........................................................................................")
+                              end )
+
+   end
+
    def handle_call({:mapToId,id},_from,state) do
-    {_id,list}=state
+    {_id,map}=state
     stringId = Integer.to_string(id)
      nodeid =  String.slice(:crypto.hash(:sha, stringId) |> Base.encode16, 0..3)
-    state={nodeid,list}
+    state={nodeid,map}
     {:reply,nodeid,state}
    end
 
@@ -244,6 +264,16 @@ defmodule Tapestry do
 
    def handle_call({:getHash},_from,state) do
      {id, _} = state
+
+   def handle_call({:updateStateWithRoutingTable,globalList},_from,state) do
+    {id,_map}=state
+    routingmap = nodeRoutingTable(id,globalList)
+    state={id,routingmap}
+    {:reply,routingmap,state}
+   end
+
+   def handle_call({:fecthNodeId},_from,state)do
+    {id,_map}=state
     {:reply,id,state}
    end
 
@@ -325,5 +355,41 @@ defmodule Tapestry do
                                                                 #IO.puts(bool)
                                                 end)
                                                 #IO.inspect neighbour_list
-   end
+    end
+
+    def handle_call({:fetchNodeRoutingMap},_from,state)do
+     {_id,map} = state
+     {:reply,map,state}
+    end
+
+    def routing(nodeId,destinationNode,hopNo,peers) do
+           IO.puts("Node : #{nodeId}")
+           cond do
+             nodeId ==  destinationNode ->
+             hopNo
+             true ->
+                 [pid]= Enum.reject(peers, fn(peer)->
+                                                   id = GenServer.call(peer,{:fecthNodeId})
+                                                   id  != nodeId end)
+
+                 routingMap = GenServer.call(pid,{:fetchNodeRoutingMap})
+                 IO.puts("Routing Map of Node >>>>>")
+                 IO.inspect(routingMap)
+               entryNo = String.at(destinationNode,hopNo)
+               #IO.puts(entryNo)
+               entry= String.to_integer(entryNo,16)
+               #IO.inspect(Map.fetch(routingMap, hopNo+1))
+               {:ok,levelnodes} = Map.fetch(routingMap, hopNo+1)
+               #IO.inspect levelnodes
+               node = Enum.at(levelnodes,entry)
+               IO.puts("Fetching node #{node} from Level #{hopNo+1}")
+               #IO.inspect(node)
+               cond do
+                 is_list(node) and Enum.empty?(node) -> IO.puts("No such fucking node !")
+                 true -> routing(node,destinationNode,hopNo+1,peers)
+               end
+          end
+    end
+
+end
 end
