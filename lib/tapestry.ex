@@ -5,7 +5,21 @@ defmodule TapestrySupervisor do
     {:ok, pid} = Supervisor.start_link(__MODULE__,numNodes,name: __MODULE__)
     IO.puts "The supervisor ID is "
     IO.inspect pid
-    initializeChildNodes(pid)
+    nodes = initializeChildNodes(pid)
+    {:ok,newnode} = Supervisor.start_child(pid,Supervisor.child_spec(Tapestry,id: 200))
+    samenewnode = Tapestry.networkJoin(nodes,numNodes,newnode)
+
+    findMaxHops([samenewnode|nodes],5,pid)
+  end
+
+  def init(numNodes) do
+
+    children = Enum.map(1..(numNodes-1),fn (x) -> Supervisor.child_spec(Tapestry,id: x) end)
+
+    IO.puts "Children are"
+    IO.inspect children
+
+    Supervisor.init(children, strategy: :one_for_one)
   end
 
   def initializeChildNodes(pid) do
@@ -24,27 +38,49 @@ defmodule TapestrySupervisor do
 
     IO.puts "The list is"
     IO.inspect list
-    initializeNeighbourMap(nodes)
-  end
+  #  initializeNeighbourMap(nodes)
 
-  def initializeNeighbourMap(nodes) do
     IO.puts "Need to initialize neighbour map for all nodes as follows : "
     IO.inspect nodes
     Enum.each(nodes, fn (node) -> Tapestry.initializeNeighbours(node,nodes)   end)
-
-    Tapestry.networkJoin(nodes)
-    Tapestry.makeRequests(nodes)
+    nodes
   end
 
-  def init(numNodes) do
+  def initializeNeighbourMap(nodes) do
 
-    children = Enum.map(1..numNodes,fn (x) -> Supervisor.child_spec(Tapestry,id: x) end)
 
-    IO.puts "Children are"
-    IO.inspect children
-
-    Supervisor.init(children, strategy: :one_for_one)
+#    newnode = Tapestry.networkJoin(nodes,numNodes)
+#    newnode2 = Tapestry.networkJoin([newnode|nodes],numNodes+1)
+#    Tapestry.makeRequests([newnode|nodes],9)
   end
+
+  def findMaxHops(nodes,requests,pid) do
+
+    result = Supervisor.which_children(pid)
+
+    allchildren = Enum.map(result, fn (x) ->
+                                {_,pid,_,_} = x
+
+                                pid end)
+
+    Enum.each(allchildren,fn (node) ->
+      {id,neighbours} = GenServer.call(node,{:print})
+      IO.puts "\n\nNode #{id}"
+      IO.puts "Neighbours"
+      IO.inspect neighbours
+    end)
+    #Tapestry.makeRequests(allchildren,9)
+
+    hop = Enum.map(allchildren, fn (node) ->
+            maxhop = Tapestry.makeRequests(allchildren,node,requests)
+            maxhop
+          end)
+          |> Enum.max
+
+    IO.puts " Max of max hops is #{hop}"
+  end
+
+
 end
 
 
@@ -52,20 +88,20 @@ defmodule Tapestry do
   use GenServer
 
   def start_link(_) do
-
     GenServer.start_link(__MODULE__,[])
-
-  end
-
-  def buildNode(_x) do
-    {:ok,pid} = GenServer.start_link(__MODULE__,[])
-    pid
   end
 
   def init(_val)do
     state = {"",%{}}
     {:ok,state}
    end
+
+  def buildNode(_x) do
+    {:ok,pid} = GenServer.start_link(__MODULE__,[])
+    pid
+  end
+
+
 
   @spec mapPIDNodeId(atom | pid | {atom, any} | {:via, atom, any}, any) :: any
   def mapPIDNodeId(pid , id) do
@@ -102,12 +138,12 @@ defmodule Tapestry do
       #networkJoin(nodes)
    end
 
-   def networkJoin(nodes) do
-     {:ok,pid} = GenServer.start_link(__MODULE__,[])
+   def networkJoin(nodes,nodenumber,pid) do
+  #   {:ok,pid} = GenServer.start_link(__MODULE__,[])
      IO.puts "New node initialized "
      IO.inspect pid
 
-     mapPIDNodeId(pid,100)
+     mapPIDNodeId(pid,nodenumber)
 
      hash = GenServer.call(pid,{:getHash})
      IO.inspect hash
@@ -152,6 +188,7 @@ defmodule Tapestry do
      IO.puts "Neighbour map for the new node is "
      IO.inspect routingTable
      GenServer.cast(pid,{:saveRoutingTable,routingTable})
+     pid
    end
 
    def findLevel(str1,str2,i) do
@@ -163,10 +200,9 @@ defmodule Tapestry do
      end
    end
 
-   @spec nodeRoutingTable(any, integer) :: any
+
    def nodeRoutingTable(nodeId,nodes) do
-    #globalList = listOfIds(num)
-    #globalList = ["0123","0122","1234","1567","2345","3212","3025","A659","A770","D456","2135","2009","2112","2113","2114","2131","2130","213A"]
+
     globalList = nodes
     routingMap = Enum.reduce(1..4,%{}, fn level, acc -> cond do
                                                   level == 1 ->
@@ -224,22 +260,28 @@ defmodule Tapestry do
     Enum.map(peers,fn(peer) ->  GenServer.call(peer,{:updateStateWithRoutingTable,listOfNodeIds}) end)
    end
 
-   def makeRequests(numNodes,_numRequests) do
+   def makeRequests(nodes,node,numRequests) do
 
-    IO.puts("Number of nodes #{numNodes}")
-    peers = createPeers(numNodes)
+  #  IO.puts("Number of nodes #{nodes}")
+  #  peers = createPeers(numNodes)
     #IO.puts("List of NodeIds : >>>>>")
-    listOfNodeIds = listOfIds(peers)
-   IO.inspect(listOfNodeIds)
-    updateNodeState(peers)
-    Enum.map(peers,fn(peer)-> destinationNode = Enum.random(listOfNodeIds)
-                              source = GenServer.call(peer,{:fecthNodeId})
+    listOfNodeIds = listOfIds(nodes)
+    source = GenServer.call(node,{:fecthNodeId})
+#   IO.inspect(listOfNodeIds)
+    updateNodeState(nodes)
+
+    hops = Enum.map(1..numRequests,fn(peer)-> destinationNode = Enum.random(listOfNodeIds)
+                          #    source = GenServer.call(peer,{:fecthNodeId})
                               IO.puts("Source Node: #{source}            Destination Node: #{destinationNode}")
-                              noOfhops = routing(source,destinationNode,1,0,peers)
+                              noOfhops = routing(source,destinationNode,1,0,nodes)
                               IO.puts("Number of hops: #{noOfhops}")
                               IO.puts("..........................................................................................")
+                              noOfhops
                               end )
+           |> Enum.max
+     IO.puts "Max Number of hops for #{source} are #{hops}"
 
+     hops
    end
 
    def handle_call({:mapToId,id},_from,state) do
@@ -333,17 +375,19 @@ defmodule Tapestry do
     neighbourMap = cond do
                              (curr_val_node == []) ->   newlist = insertAt(list,index,newnodehash)
                                                         Map.replace!(neighbourMap,level,newlist)
+
                              true ->    {curr_val,_} = Enum.at(list, index) |> Integer.parse(16)
                                         {new_val,_} = Integer.parse(newnodehash,16)
                                         {ownhash_val,_} = Integer.parse(hash,16)
 
-                                        if (abs(new_val-ownhash_val) > abs(curr_val-ownhash_val)) do
+                                        if (abs(new_val-ownhash_val) < abs(curr_val-ownhash_val)) do
                                                       newlist = insertAt(list,index,newnodehash)
                                                       Map.replace!(neighbourMap,level,newlist)
+
                                         end
                 end
-      IO.puts "Updated neighbour map for #{hash} is"
-      IO.inspect neighbourMap
+    IO.puts "Updated neighbour map for #{hash} is"
+    IO.inspect neighbourMap
 
     {:noreply,{hash,neighbourMap}}
    end
@@ -353,46 +397,6 @@ defmodule Tapestry do
      [_|new_last] = last
      front ++ [newnode|new_last]
    end
-
-   def createRoutingTable(nodeId) do
-    id = Integer.to_string(nodeId)
-    length = String.length(id)
-    map= %{}
-    final_map = Enum.reduce 1..length, map, fn i, acc -> Map.put(acc,i,[]) end
-    neighbour_list = Enum.map(Map.keys(final_map), fn(level)->
-                                                                #IO.inspect level
-                                                                list  = Enum.map(0..9,
-                                                                  fn(entry) -> levelnodes = Enum.reduce(0..length-1,"",
-                                                                                            fn i,acc ->
-                                                                                                      cond do
-
-                                                                                                      i<level ->
-                                                                                                                    str =  acc <> String.at(id, i)
-                                                                                                                    str
-                                                                                                      i == level ->
-                                                                                                                    str = acc <> Integer.to_string(entry)
-                                                                                                                    str
-                                                                                                      i>level ->
-                                                                                                                    str = acc <> "0"
-                                                                                                                    str
-                                                                                                      end
-                                                                                             end )
-
-                                                                                 #levelmap = Enum.reduce levelnodes, Map.fetch!(final_map,level), fn node,acc -> Map.get_and_update!(final_map,level, acc ++ node) end
-                                                                                 #levelmap = Map.put(final_map,level,levelnodes)
-                                                                                 #IO.inspect levelmap
-                                                                             #IO.inspect (acc ++ string)
-                                                                    end)
-
-                                                                #bool = is_list(list)
-                                                                IO.puts level
-                                                                crap = Enum.reduce(list,[],fn item,acc-> acc ++ item end)
-                                                                IO.puts crap
-                                                                #Enum.each(list, fn(item)-> IO.puts(item)end)
-                                                                #IO.puts(bool)
-                                                end)
-                                                #IO.inspect neighbour_list
-    end
 
     def handle_call({:fetchNodeRoutingMap},_from,state)do
      {_id,map} = state
