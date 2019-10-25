@@ -7,7 +7,7 @@ defmodule TapestryApp do
     {numNodes,_}=Integer.parse(Enum.at(arguments,0))
     {numRequests,_}=Integer.parse(Enum.at(arguments,1))
 
-    IO.puts "Number of nodes and requests are #{numNodes} , #{numRequests}"
+    
     {pid,hops} = TapestrySupervisor.start_link(numNodes,numRequests) |> TapestrySupervisor.findMaxHops()
     maxhops = Enum.map(hops, fn hop->
                 val = hop |> Enum.max
