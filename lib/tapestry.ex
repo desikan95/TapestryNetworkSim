@@ -124,6 +124,11 @@ defmodule TapestrySupervisor do
     #findMaxHops(pid)
   end
 
+  def handle_info(:completingtask,state) do
+    IO.puts "CONTINUING TASK"
+    {:noreply,state}
+  end
+
 
   def findMaxHops(pid) do
     result = Supervisor.which_children(pid)
@@ -135,12 +140,14 @@ defmodule TapestrySupervisor do
                   {id,_,hop} = GenServer.call(node,{:print})
                   IO.puts " for #{id}"
                   IO.inspect hop
-                  hops = hop |> Map.values |> Enum.max
-                  IO.puts "List of max hop values are #{hops}"
+                  hops = hop |> Map.values |> Enum.reject(fn x -> x==:ok end) |> Enum.reject(fn x-> x==[] end)
+                  IO.inspect hops
+                  #IO.puts "List of max hop values are #{hops}"
                   hops
                 end)
-                |> Enum.max
-      IO.puts "All max values are #{maxhops}"
+                |> Enum.reject(fn x-> x==[] end)
+
+    #  IO.puts "All max values are #{maxhops}"
       maxhops
   end
 
@@ -453,15 +460,13 @@ defmodule Tapestry do
   def handle_cast({:sendresult,hop,destinationhash},state) do
     {id,routingmap,hopstodestination} = state
     hopstodestination = Map.put(hopstodestination,destinationhash,hop)
-
-    IO.puts "Hops from #{id} to #{destinationhash} : #{hop} "
-
+  #  IO.puts "Hops from #{id} to #{destinationhash} : #{hop} "
     {:noreply,{id,routingmap,hopstodestination}}
   end
 
 
    def handle_cast({:addNewNode,newnodehash},state) do
-  #  newnodehash = GenServer.call(pid, {:getHash})
+
     {hash,neighbourMap,hopstodestination} = state
     level = findLevel(hash,newnodehash,0)
     list = Map.get(neighbourMap,level)

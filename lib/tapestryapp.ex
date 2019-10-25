@@ -12,10 +12,17 @@ defmodule TapestryApp do
     pid = TapestrySupervisor.start_link(numNodes)
 
     val = TapestrySupervisor.beginRouting(numRequests,pid)
-    :timer.sleep(5000)
+    #:timer.sleep(5000)
   #  IO.puts val
-    if (val==numRequests) do
+    #if (val==numRequests) do
       hops = TapestrySupervisor.findMaxHops(pid)
-    IO.puts "Max HOPS : #{hops}" end
+    #  IO.inspect hops end
+
+    maxval = Enum.map(hops, fn hop->
+                val = hop |> Enum.max
+                val
+              end)
+              |> Enum.max
+    IO.puts "Max HOPS : #{maxval}" 
   end
 end
