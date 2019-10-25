@@ -6,10 +6,11 @@ defmodule TapestrySupervisor do
     IO.puts "The supervisor ID is "
     IO.inspect pid
     nodes = initializeChildNodes(pid)
-    {:ok,newnode} = Supervisor.start_child(pid,Supervisor.child_spec(Tapestry,id: 200))
+    {:ok,newnode} = Supervisor.start_child(pid,Supervisor.child_spec(Tapestry,id: numNodes))
     samenewnode = Tapestry.networkJoin(nodes,numNodes,newnode)
 
-    findMaxHops([samenewnode|nodes],5,pid)
+    #beginRouting(8,pid)
+    pid
   end
 
   def init(numNodes) do
@@ -24,7 +25,7 @@ defmodule TapestrySupervisor do
 
   def initializeChildNodes(pid) do
     result = Supervisor.which_children(pid)
-    IO.inspect result
+#    IO.inspect result
 
     nodes = Enum.map(result, fn (x) ->
                                 {id,pid,_,_} = x
@@ -32,17 +33,12 @@ defmodule TapestrySupervisor do
                                 pid end)
     IO.inspect nodes
 
-    list = Enum.reduce(nodes, [], fn x, acc-> {id,_list} = GenServer.call(x,{:print})
-                                            acc ++ [id]
-                                            end )
 
-    IO.puts "The list is"
-    IO.inspect list
-  #  initializeNeighbourMap(nodes)
+        Tapestry.updateNodeState(nodes)
 
-    IO.puts "Need to initialize neighbour map for all nodes as follows : "
-    IO.inspect nodes
-    Enum.each(nodes, fn (node) -> Tapestry.initializeNeighbours(node,nodes)   end)
+
+
+#    Enum.each(nodes, fn (node) -> Tapestry.initializeNeighbours(node,nodes)   end)
     nodes
   end
 
@@ -54,34 +50,104 @@ defmodule TapestrySupervisor do
 #    Tapestry.makeRequests([newnode|nodes],9)
   end
 
-  def findMaxHops(nodes,requests,pid) do
+  def beginRouting(requests,pid) do
+
 
     result = Supervisor.which_children(pid)
 
     allchildren = Enum.map(result, fn (x) ->
                                 {_,pid,_,_} = x
-
                                 pid end)
 
-    Enum.each(allchildren,fn (node) ->
-      {id,neighbours} = GenServer.call(node,{:print})
-      IO.puts "\n\nNode #{id}"
-      IO.puts "Neighbours"
-      IO.inspect neighbours
-    end)
+    IO.inspect allchildren
+
+
+
+  #  allchildrenids = Enum.map(allchildren,fn (node) ->
+  #    {id,neighbours,_} = GenServer.call(node,{:print})
+  #    IO.puts "\n\nNode #{id}"
+  #    IO.puts "Neighbours"
+  #    IO.inspect neighbours
+  #    id
+  #  end)
     #Tapestry.makeRequests(allchildren,9)
+    listOfNodeIds = Tapestry.listOfIds(allchildren)
+  #  source = GenServer.call(node,{:fecthNodeId})
 
-    hop = Enum.map(allchildren, fn (node) ->
-            maxhop = Tapestry.makeRequests(allchildren,node,requests)
-            maxhop
-          end)
-          |> Enum.max
+    Tapestry.updateNodeState(allchildren)
 
-    IO.puts " Max of max hops is #{hop}"
+
+
+
+
+    pidmapper = Enum.reduce(allchildren,%{},fn node,map -> {id,_,_} = GenServer.call(node,{:print})
+                                                      Map.put(map,id,node)
+                end)
+
+
+
+    IO.puts "Number of requests are #{requests}"
+  #  Enum.each(1..requests, fn request ->
+
+  #    destinationhash = Enum.random(listOfNodeIds)
+  #    IO.puts "Request number #{request} , Destionation hash is #{destinationhash}"
+  #    Enum.each(allchildren, fn(node) ->
+  #      Tapestry.oldmakeRequests(destinationhash,node,pidmapper)
+  #    end)
+  #  end)
+
+    Enum.each(allchildren, fn node ->
+      spawn( fn ->
+      Tapestry.makeRequests(node,pidmapper,requests,listOfNodeIds)
+
+    end)
+    end)
+
+
+
+  #  maxhops =       Enum.map(allchildren,fn node ->
+  #                    {id,_,hopstodestination} = GenServer.call(node,{:print})
+  #                    IO.puts "For #{id}"
+  #                    IO.inspect hopstodestination
+  #                    maxhops = hopstodestination |> Map.values |> Enum.max
+  #                    maxhops
+  #                  end)
+  #                  |> Enum.max
+
+  #  IO.puts "Max hops : #{maxhops}"
+
+  #WORKING CODEEEEEEEEEEEEEEEE
+
+
+
+    requests
+    #findMaxHops(pid)
   end
 
 
+  def findMaxHops(pid) do
+    result = Supervisor.which_children(pid)
+    nodes = Enum.map(result, fn (x) ->
+                                {_,pid,_,_} = x
+                                pid end)
+
+    maxhops =   Enum.map(nodes, fn (node)->
+                  {id,_,hop} = GenServer.call(node,{:print})
+                  IO.puts " for #{id}"
+                  IO.inspect hop
+                  hops = hop |> Map.values |> Enum.max
+                  IO.puts "List of max hop values are #{hops}"
+                  hops
+                end)
+                |> Enum.max
+      IO.puts "All max values are #{maxhops}"
+      maxhops
+  end
+
+
+
 end
+
 
 
 defmodule Tapestry do
@@ -92,7 +158,7 @@ defmodule Tapestry do
   end
 
   def init(_val)do
-    state = {"",%{}}
+    state = {"",%{},%{}}
     {:ok,state}
    end
 
@@ -100,6 +166,8 @@ defmodule Tapestry do
     {:ok,pid} = GenServer.start_link(__MODULE__,[])
     pid
   end
+
+
 
 
 
@@ -121,21 +189,11 @@ defmodule Tapestry do
    def initializeNeighbours(node,nodes) do
 
       sourceNode = GenServer.call(node,{:getHash})
-      IO.puts "\n\nNode is : "
-      IO.inspect sourceNode
-
       nodeHashes = Enum.map(nodes, fn x -> GenServer.call(x,{:getHash}) end)
-      IO.puts "Node hashes are "
-      IO.inspect nodeHashes
 
       routingTable = nodeRoutingTable(sourceNode,nodeHashes)
+      GenServer.call(node,{:saveRoutingTable,routingTable})
 
-      IO.puts "Neighbour map for source node is "
-      IO.inspect routingTable
-      GenServer.cast(node,{:saveRoutingTable,routingTable})
-
-      IO.puts "Saved"
-      #networkJoin(nodes)
    end
 
    def networkJoin(nodes,nodenumber,pid) do
@@ -154,14 +212,14 @@ defmodule Tapestry do
 
 
      p = findLevel(hash,roothash,0)
-     IO.puts "Need to check from levels #{p} "
+#     IO.puts "Need to check from levels #{p} "
 
      needtoknowInitial = GenServer.call(root,{:getNodesAtLevels,p})
      hashnodemap = Enum.reduce(nodes, %{}, fn (node,map) -> hashval = GenServer.call(node,{:getHash})
                                                             Map.put(map,hashval,node)
                                                             end)
 
-     needtoknow = Enum.reduce(p..4, needtoknowInitial, fn (p,acc) ->
+     needtoknow = Enum.reduce(p..6, needtoknowInitial, fn (p,acc) ->
                                                                       result = Enum.map(acc, fn hash ->  node = Map.get(hashnodemap, hash)
                                                                                                          cond do
                                                                                                             (node==:nil) -> []
@@ -175,8 +233,6 @@ defmodule Tapestry do
                                                     end )
                       |> Enum.uniq
 
-     IO.puts "\nList of possible neighbour nodes (all need to know) are : "
-     IO.inspect needtoknow
 
      Enum.each(needtoknow, fn (node) ->
        newnodehash = GenServer.call(pid, {:getHash})
@@ -185,9 +241,8 @@ defmodule Tapestry do
 
      routingTable = nodeRoutingTable(hash,[hash|needtoknow])
 
-     IO.puts "Neighbour map for the new node is "
-     IO.inspect routingTable
-     GenServer.cast(pid,{:saveRoutingTable,routingTable})
+
+      GenServer.call(pid,{:saveRoutingTable,routingTable})
      pid
    end
 
@@ -204,7 +259,7 @@ defmodule Tapestry do
    def nodeRoutingTable(nodeId,nodes) do
 
     globalList = nodes
-    routingMap = Enum.reduce(1..4,%{}, fn level, acc -> cond do
+    routingMap = Enum.reduce(1..6,%{}, fn level, acc -> cond do
                                                   level == 1 ->
                                                        levelNodes = Enum.reduce(0..15,[], fn entryNo,acc -> list = Enum.reduce(globalList, [], fn node,acc  ->
                                                                                                                                          cond do
@@ -260,41 +315,78 @@ defmodule Tapestry do
     Enum.map(peers,fn(peer) ->  GenServer.call(peer,{:updateStateWithRoutingTable,listOfNodeIds}) end)
    end
 
-   def makeRequests(nodes,node,numRequests) do
+   def oldmakeRequests(destinationhash,node,pidmapper) do
+     GenServer.cast(node,{:routing,node,destinationhash,0,pidmapper})
+   end
 
+#   def makeRequests(nodes,node) do
+    def makeRequests(node,pidmapper,numRequests,listofNodeIds) do
   #  IO.puts("Number of nodes #{nodes}")
   #  peers = createPeers(numNodes)
     #IO.puts("List of NodeIds : >>>>>")
-    listOfNodeIds = listOfIds(nodes)
-    source = GenServer.call(node,{:fecthNodeId})
-#   IO.inspect(listOfNodeIds)
-    updateNodeState(nodes)
+#    listOfNodeIds = listOfIds(nodes)
+  #  source = GenServer.call(node,{:fecthNodeId})
 
-    hops = Enum.map(1..numRequests,fn(peer)-> destinationNode = Enum.random(listOfNodeIds)
+#    updateNodeState(nodes)
+
+#    pidmapper = Enum.reduce(nodes,%{},fn node,map -> {id,_,_} = GenServer.call(node,{:print})
+#                                                      Map.put(map,id,node)
+#                end)
+
+    Enum.each(1..numRequests, fn x ->
+
+      spawn(fn ->
+                                      destinationhash = Enum.random(listofNodeIds)
+
+                                GenServer.cast(node,{:routing,node,destinationhash,0,pidmapper})
+
+
+                                   end)
+    end)
+
+    #hops = Enum.map(1..numRequests,fn(peer)-> destinationNode = Enum.random(listOfNodeIds)
                           #    source = GenServer.call(peer,{:fecthNodeId})
-                              IO.puts("Source Node: #{source}            Destination Node: #{destinationNode}")
-                              noOfhops = routing(source,destinationNode,1,0,nodes)
-                              IO.puts("Number of hops: #{noOfhops}")
-                              IO.puts("..........................................................................................")
-                              noOfhops
-                              end )
-           |> Enum.max
-     IO.puts "Max Number of hops for #{source} are #{hops}"
+                          #    IO.puts("Source Node: #{source}            Destination Node: #{destinationNode}")
+                          #    noOfhops = routing(source,destinationNode,1,0,nodes)
 
-     hops
+                          #    GenServer.cast(node,{:routing,node,destinationNode,0,nodes})
+
+
+                          #    IO.puts("Number of hops: #{noOfhops}")
+                          #    IO.puts("..........................................................................................")
+                            #  noOfhops
+
+    #                          end )
+    #       |> Enum.max
+  #   IO.puts "Max Number of hops for #{source} are #{hops}"
+
+     # hops
+   end
+
+   def handle_call({:makeRequests,node,pidmapper,numRequests,listofNodeIds},_from,state) do
+
+     Enum.each(1..numRequests, fn x ->
+                                       destinationhash = Enum.random(listofNodeIds)
+
+                                      GenServer.cast(node,{:routing,node,destinationhash,0,pidmapper})
+     end)
+
+
+     {_,_,hopmap} = state
+     {:reply,hopmap,state}
    end
 
    def handle_call({:mapToId,id},_from,state) do
-    {_id,map}=state
+    {_id,map,hopstodestination}=state
     stringId = Integer.to_string(id)
-     nodeid =  String.slice(:crypto.hash(:sha, stringId) |> Base.encode16, 0..3)
-    state={nodeid,map}
+     nodeid =  String.slice(:crypto.hash(:sha, stringId) |> Base.encode16, 0..5)
+    state={nodeid,map,hopstodestination}
     {:reply,nodeid,state}
    end
 
    def handle_call({:getNodesAtLevels,level},_from,state) do
-    {_id,routingMap}=state
-    result = level..4
+    {_id,routingMap,_}=state
+    result = level..6
              |> Enum.map(fn x -> Map.get(routingMap,x) end)
              |> List.flatten
              |> Enum.reject(fn x -> x==[] end)
@@ -307,63 +399,70 @@ defmodule Tapestry do
    end
 
    def handle_call({:getHash},_from,state) do
-     {id, _} = state
+     {id, _,_} = state
      {:reply,id,state}
    end
 
    def handle_call({:updateStateWithRoutingTable,globalList},_from,state) do
-    {id,_map}=state
+    {id,_map,hopstodestination}=state
     routingmap = nodeRoutingTable(id,globalList)
-    state={id,routingmap}
+    state={id,routingmap,hopstodestination}
     {:reply,routingmap,state}
    end
 
    def handle_call({:fecthNodeId},_from,state)do
-    {id,_map}=state
+    {id,_map,_}=state
     {:reply,id,state}
    end
 
-  def handle_cast({:saveRoutingTable,routingTable},state) do
-    {id,_}=state
-    {:noreply,{id,routingTable}}
-  end
+    def handle_call({:saveRoutingTable,routingTable},_from,state) do
+      {id,_,hopstodestination} = state
+      {:reply,routingTable,{id,routingTable,hopstodestination}}
+    end
 
    def handle_call({:fetchNodeRoutingMap},_from,state)do
-    {_id,map} = state
+    {_id,map,_} = state
     {:reply,map,state}
    end
 
-   def routing(currentNode,destinationNode,currentLevel,hopNo,peers) do
-    #IO.puts("Node : #{currentNode}")
+  def handle_cast({:routing,sourcePID,destinationhash,hopNo,pidmapper},state) do
+    {ownhash,routingMap,_} = state
+
+
+
     cond do
-      currentNode ==  destinationNode ->
-      hopNo
+      ownhash ==  destinationhash -> GenServer.cast(sourcePID,{:sendresult,hopNo,destinationhash})
       true ->
-          [pid]= Enum.reject(peers, fn(peer)->
 
-                                            id = GenServer.call(peer,{:fecthNodeId})
-                                            currentNode != id end)
-
-          routingMap = GenServer.call(pid,{:fetchNodeRoutingMap})
-          IO.puts("Routing Map of Node >>>>>")
-          IO.inspect(routingMap)
-        entryNo = String.at(destinationNode,currentLevel-1)
+        currentLevel = findLevel(ownhash,destinationhash,0)
+        entryNo = String.at(destinationhash,currentLevel-1)
         entry= String.to_integer(entryNo,16)
-        IO.puts(entry)
-        {:ok,levelnodes} = Map.fetch(routingMap, currentLevel)
+        levelnodes = Map.get(routingMap,currentLevel)
         nextNode = Enum.at(levelnodes,entry)
-        IO.puts("Fetching node #{nextNode} from Level #{currentLevel}")
+
         cond do
           is_list(nextNode) and Enum.empty?(nextNode) -> IO.puts("No such fucking node !")
-          nextNode == currentNode -> routing(nextNode,destinationNode,currentLevel+1,hopNo,peers)
-          true -> routing(nextNode,destinationNode,currentLevel+1,hopNo+1,peers)
+          nextNode == ownhash -> GenServer.cast(sourcePID,{:sendresult,hopNo+1,destinationhash})
+          true -> GenServer.cast(Map.get(pidmapper,nextNode),{:routing,sourcePID,destinationhash,hopNo+1,pidmapper})
         end
+
     end
+    {:noreply,state}
   end
+
+  def handle_cast({:sendresult,hop,destinationhash},state) do
+    {id,routingmap,hopstodestination} = state
+    hopstodestination = Map.put(hopstodestination,destinationhash,hop)
+
+    IO.puts "Hops from #{id} to #{destinationhash} : #{hop} "
+
+    {:noreply,{id,routingmap,hopstodestination}}
+  end
+
 
    def handle_cast({:addNewNode,newnodehash},state) do
   #  newnodehash = GenServer.call(pid, {:getHash})
-    {hash,neighbourMap} = state
+    {hash,neighbourMap,hopstodestination} = state
     level = findLevel(hash,newnodehash,0)
     list = Map.get(neighbourMap,level)
 
@@ -386,10 +485,9 @@ defmodule Tapestry do
 
                                         end
                 end
-    IO.puts "Updated neighbour map for #{hash} is"
-    IO.inspect neighbourMap
 
-    {:noreply,{hash,neighbourMap}}
+
+    {:noreply,{hash,neighbourMap,hopstodestination}}
    end
 
    def insertAt(list,index,newnode) do
@@ -399,37 +497,8 @@ defmodule Tapestry do
    end
 
     def handle_call({:fetchNodeRoutingMap},_from,state)do
-     {_id,map} = state
+     {_id,map,_} = state
      {:reply,map,state}
-    end
-
-    def routing(nodeId,destinationNode,hopNo,peers) do
-           IO.puts("Node : #{nodeId}")
-           cond do
-             nodeId ==  destinationNode ->
-             hopNo
-             true ->
-                 [pid]= Enum.reject(peers, fn(peer)->
-                                                   id = GenServer.call(peer,{:fecthNodeId})
-                                                   id  != nodeId end)
-
-                 routingMap = GenServer.call(pid,{:fetchNodeRoutingMap})
-                 IO.puts("Routing Map of Node >>>>>")
-                 IO.inspect(routingMap)
-               entryNo = String.at(destinationNode,hopNo)
-               #IO.puts(entryNo)
-               entry= String.to_integer(entryNo,16)
-               #IO.inspect(Map.fetch(routingMap, hopNo+1))
-               {:ok,levelnodes} = Map.fetch(routingMap, hopNo+1)
-               #IO.inspect levelnodes
-               node = Enum.at(levelnodes,entry)
-               IO.puts("Fetching node #{node} from Level #{hopNo+1}")
-               #IO.inspect(node)
-               cond do
-                 is_list(node) and Enum.empty?(node) -> IO.puts("No such fucking node !")
-                 true -> routing(node,destinationNode,hopNo+1,peers)
-               end
-          end
     end
 
 
