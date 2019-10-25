@@ -8,9 +8,14 @@ defmodule TapestryApp do
     {numRequests,_}=Integer.parse(Enum.at(arguments,1))
 
     IO.puts "Number of nodes and requests are #{numNodes} , #{numRequests}"
+    {pid,hops} = TapestrySupervisor.start_link(numNodes,numRequests) |> TapestrySupervisor.findMaxHops()
+    maxhops = Enum.map(hops, fn hop->
+                val = hop |> Enum.max
+                val
+              end)
+              |> Enum.max
+    IO.puts "Max Hops : #{maxhops}"
 
-    pid = TapestrySupervisor.start_link(50)
-    hops = TapestrySupervisor.findMaxHops(pid)
-    IO.puts "Max HOPS : #{hops}"
+    {:ok,pid}
   end
 end
